@@ -1,38 +1,40 @@
 
 //https://gist.github.com/flashingpumpkin/91e2a5527a40602f5c0ba57845191f51
 
-data class Game(val monsters: Map<Int, City>)
+class Game(val monsters: List<Monster>, val cities: List<City>) {
+    fun findCityByName(name: String): City {
+        val x = cities.find { x -> x.name == name }
+        return x!!
+    }
+}
 
-class City(val name: String, val neighbouringCities: Map<String, String>) {
+class Monster(val number: Int, val currentCity: City, val lastDirectionTravelled: String) {
+    override fun toString(): String {
+        return "Monster Number " + number+ " travelled " + lastDirectionTravelled + " and is now currently in " + currentCity
+    }
+
+    fun move(game: Game): Monster {
+        val travel = currentCity.nextRandomCityFromHere(game)
+        return Monster(number, travel.first, travel.second)
+    }
+}
+
+class City(val name: String, private val neighbouringCities: Map<String, String>) {
 
     override fun toString(): String {
         return name
     }
 
-    fun nextRandomCityFromHere(): City {
-        val x = neighbouringCities.map { v -> v.value }
+    //todo this is awful
+    fun nextRandomCityFromHere(game: Game): Pair<City, String> {
+        val x: List<String> = neighbouringCities.map { v -> v.value }
         val nextCityName = x.random()
-        return findCityByName(nextCityName)
+        val directionTravelled: String = neighbouringCities.filter { m -> m.value == nextCityName }.keys.first()
+        return Pair(game.findCityByName(nextCityName), directionTravelled)
     }
 
     companion object {
 
-        fun findCityByName(name: String): City {
-            val x = listOfCities.find { x -> x.name == name }
-            return x!!
-        }
-
-        val listOfCities: List<City> = this.javaClass.getResource("/map-small.txt").readText().split("\n").map { s ->
-            val a = s.split(" ")
-            val name = a.get(0)
-
-            val neighbouringCities: Map<String, String> = a.subList(1, a.size).map { x ->
-                val splittingDirectionAndName = x.split("=")
-                splittingDirectionAndName.first() to splittingDirectionAndName.last()
-            }.toMap()
-
-            City(name, neighbouringCities)
-        }
     }
 }
 
@@ -41,32 +43,50 @@ fun round(game: Game): Game {
     println("Next Round: ")
     println("=============================")
 
-    val nextState = game.monsters.mapValues { v ->
-        v.value.nextRandomCityFromHere()
+    val nextState: Game = Game(game.monsters.map { it.move(game) }, game.cities)
+
+    nextState.monsters.forEach { l ->
+        println(l)
     }
 
-    nextState.forEach { l ->
-        println("Monster Number " + l.key + " is now currently in " + l.value)
-    }
+    return nextState
+}
 
-    return Game(nextState)
+fun fight(game: Game): Game {
+    val cities = game.monsters.map { it.currentCity.name to it }.toMap()
+    return game
 }
 
 fun main(args: Array<String>) {
     println("=============================")
     println("Please enter how many monsters you need: ")
     val noOfMonsters = readLine()?.toInt()
-    val initialList = Game(List(noOfMonsters!!) { index ->
+    val initialCities = Initialisation.listOfCities
+    val initialGame = Game(List(noOfMonsters!!) { index ->
         index + 1
-    }.map { it to City.listOfCities.random() }.toMap())
+    }.map { x -> Monster(x, initialCities.random(), "from home") }, initialCities)
 
     println("Here is your starting status: ")
     println("==============================")
-    initialList.monsters.forEach { l ->
-        println("Monster Number " + l.key + " is currently in " + l.value)
+    initialGame.monsters.forEach { l ->
+        println(l)
     }
 
-    round(initialList)
+    round(initialGame)
 
     return
+}
+
+object Initialisation {
+    val listOfCities: List<City> = this.javaClass.getResource("/map-small.txt").readText().split("\n").map { s ->
+        val a = s.split(" ")
+        val name = a.get(0)
+
+        val neighbouringCities: Map<String, String> = a.subList(1, a.size).map { x ->
+            val splittingDirectionAndName = x.split("=")
+            splittingDirectionAndName.first() to splittingDirectionAndName.last()
+        }.toMap()
+
+        City(name, neighbouringCities)
+    }
 }
