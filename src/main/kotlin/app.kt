@@ -1,60 +1,92 @@
+import kotlin.random.Random
 
 //https://gist.github.com/flashingpumpkin/91e2a5527a40602f5c0ba57845191f51
 
-class Game(val monsters: List<Monster>, val cities: List<City>) {
-    fun findCityByName(name: String): City {
-        val x = cities.find { x -> x.name == name }
-        return x!!
+class Game(val monsters: List<Monster>, val cities: List<City>, val round: Int) {
+    fun findCityByName(name: Name): City {
+        val y = cities.find { x ->
+            x.name.value == name.value
+        }
+        return y!!
     }
 }
 
-class Monster(val number: Int, val currentCity: City, val lastDirectionTravelled: String) {
+class Monster(val id: Int, val currentCity: City, val lastDirectionTravelled: Direction) {
     override fun toString(): String {
-        return "Monster Number " + number+ " travelled " + lastDirectionTravelled + " and is now currently in " + currentCity
+        return "Monster Number " + id + " travelled " + lastDirectionTravelled + " and is now currently in " + currentCity
     }
 
     fun move(game: Game): Monster {
         val travel = currentCity.nextRandomCityFromHere(game)
-        return Monster(number, travel.first, travel.second)
+        return Monster(id, travel.first, travel.second)
+    }
+
+    fun removeBadDirections(badCities: List<City>): Monster {
+        val newDirections: Map<Direction, Name> = currentCity.neighbouringCities.filterNot { e ->
+            badCities.map { it.name.value }.contains(e.value.value)
+        }
+        return Monster(id, City(currentCity.name, newDirections), lastDirectionTravelled)
     }
 }
 
-class City(val name: String, private val neighbouringCities: Map<String, String>) {
+class City(val name: Name, val neighbouringCities: Map<Direction, Name>) {
 
     override fun toString(): String {
-        return name
+        return name.value
     }
 
     //todo this is awful
-    fun nextRandomCityFromHere(game: Game): Pair<City, String> {
-        val x: List<String> = neighbouringCities.map { v -> v.value }
+    fun nextRandomCityFromHere(game: Game): Pair<City, Direction> {
+        val x: List<Name> = neighbouringCities.map { v -> v.value }
         val nextCityName = x.random()
-        val directionTravelled: String = neighbouringCities.filter { m -> m.value == nextCityName }.keys.first()
+        val directionTravelled: Direction = neighbouringCities.filter { m -> m.value == nextCityName }.keys.first()
         return Pair(game.findCityByName(nextCityName), directionTravelled)
     }
 
-    companion object {
-
+    fun removeBadDirections(badCities: List<City>): City {
+        val done: Map<Direction, Name> = neighbouringCities.filterNot { e ->
+            badCities.map { x -> x.name.value }.contains(e.value.value)
+        }
+        return City(name, done)
     }
 }
 
 fun round(game: Game): Game {
     println("\n")
-    println("Next Round: ")
+    println("Round ${game.round}")
     println("=============================")
 
-    val nextState: Game = Game(game.monsters.map { it.move(game) }, game.cities)
+    val monsterTravel = Game(game.monsters.map { it.move(game) }, game.cities, game.round + 1)
 
-    nextState.monsters.forEach { l ->
+    monsterTravel.monsters.forEach { l ->
         println(l)
     }
 
-    return nextState
+    return fight(monsterTravel)
 }
 
 fun fight(game: Game): Game {
-    val cities = game.monsters.map { it.currentCity.name to it }.toMap()
-    return game
+
+    val monstersToFight = game.monsters.groupBy { y -> y.currentCity }.filter { y -> y.value.size > 1 }
+
+    val citiesToRemove = monstersToFight.keys.toList()
+    val monsterToRemove = monstersToFight.values.flatten()
+
+    val survivingMonsters = game.monsters.minus(monsterToRemove)
+    val survivingCities = game.cities.minus(citiesToRemove)
+
+    val monsters = survivingMonsters.map { m ->
+        m.removeBadDirections(citiesToRemove)
+    }
+    val cities = survivingCities.map { c ->
+        c.removeBadDirections(citiesToRemove)
+    }
+
+    monstersToFight.map {
+        print("${it.key.name} has been destroyed by ${it.value.map { "monster ${it.id}" }.joinToString(" and ")}! \n")
+    }
+
+    return Game(monsters, cities, game.round)
 }
 
 fun main(args: Array<String>) {
@@ -62,9 +94,17 @@ fun main(args: Array<String>) {
     println("Please enter how many monsters you need: ")
     val noOfMonsters = readLine()?.toInt()
     val initialCities = Initialisation.listOfCities
-    val initialGame = Game(List(noOfMonsters!!) { index ->
-        index + 1
-    }.map { x -> Monster(x, initialCities.random(), "from home") }, initialCities)
+    val initialGame = Game(
+        List(noOfMonsters!!) { index -> index + 1 }.map { x ->
+            Monster(
+                x,
+                initialCities.random(),
+                Direction("from home")
+            )
+        },
+        initialCities,
+        0
+    )
 
     println("Here is your starting status: ")
     println("==============================")
@@ -72,21 +112,39 @@ fun main(args: Array<String>) {
         println(l)
     }
 
-    round(initialGame)
+    return run(round(initialGame))
 
-    return
+}
+
+fun run(game: Game) {
+    if (game.monsters.size == 2) return println("All monsters have been DESTROYED\nEnd of Game")
+    else if (game.monsters.size < 2) return println("Monster Number ${game.monsters.first().id} won!\nEnd of Game")
+    else if (game.round > 10000) return println("You've run the game ${game.round} times. End of Game")
+    else return run(round(game))
 }
 
 object Initialisation {
     val listOfCities: List<City> = this.javaClass.getResource("/map-small.txt").readText().split("\n").map { s ->
         val a = s.split(" ")
-        val name = a.get(0)
+        val name = Name(a.get(0))
 
-        val neighbouringCities: Map<String, String> = a.subList(1, a.size).map { x ->
+        val neighbouringCities: Map<Direction, Name> = a.subList(1, a.size).map { x ->
             val splittingDirectionAndName = x.split("=")
-            splittingDirectionAndName.first() to splittingDirectionAndName.last()
+            Direction(splittingDirectionAndName.first()) to Name(splittingDirectionAndName.last())
         }.toMap()
 
         City(name, neighbouringCities)
+    }
+}
+
+class Direction(val value: String) {
+    override fun toString(): String {
+        return value
+    }
+}
+
+class Name(val value: String) {
+    override fun toString(): String {
+        return value
     }
 }
